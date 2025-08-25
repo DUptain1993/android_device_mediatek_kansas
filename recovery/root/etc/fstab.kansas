@@ -1,0 +1,5 @@
+# Android fstab file
+/devices/platform/bootdevice/by-name/system /system ext4 ro,barrier=1 wait
+/devices/platform/bootdevice/by-name/vendor /vendor ext4 ro,barrier=1 wait
+/devices/platform/bootdevice/by-name/cache /cache ext4 noatime,nosuid,nodev,barrier=1 wait,check,formattable
+/devices/platform/bootdevice/by-name/userdata /data f2fs noatime,nosuid,nodev,errors=continue,inline_xattr,inline_data,quota,usrquota,grpquota wait,check,formattable,forcefdeorfbe
