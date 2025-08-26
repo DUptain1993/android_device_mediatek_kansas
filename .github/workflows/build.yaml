@@ -15,6 +15,8 @@ on:
 env:
   DEVICE: kansas
   FOX_VERSION: R15.0
+  MANIFEST_BRANCH: twrp-14
+  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni
 
 jobs:
   build:
@@ -29,47 +31,31 @@ jobs:
       
       - name: Set up build environment
         run: |
-          # Add 32-bit architecture support
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          
-          # Install architecture-independent packages (NO :i386 needed)
           sudo apt-get install -y bc bison build-essential ccache curl flex \
             gperf imagemagick libxml2 libxml2-utils lzop openjdk-17-jdk pngcrush \
             rsync schedtool squashfs-tools xsltproc zip xmlstarlet libgl1-mesa-dev \
             libxml-simple-perl libswitch-perl libxml-parser-perl unzip maven git-lfs \
-            wget python-is-python3 repo liblz4-tool
-            
-          # Install 64-bit development packages
-          sudo apt-get install -y libtinfo5 libncurses5 libssl-dev zlib1g-dev \
-            libbz2-dev libghc-bzlib-dev libsepol-dev libacl1-dev liblzo2-dev
-            
-          # Install 32-bit compatibility libraries (WITH :i386)
-          sudo apt-get install -y gcc-multilib g++-multilib git gnupg \
-            lib32z1-dev lib32ncurses5-dev lib32readline8 libbz2-1.0:i386 \
-            libtinfo5:i386 libncurses5:i386 libssl-dev:i386 zlib1g-dev:i386 \
-            libsepol-dev:i386 libacl1-dev:i386 liblzo2-dev:i386
-
-      - name: Verify critical tools
-        run: |
-          java -version
-          python3 --version
-          repo --version
-          ccache --version
-          echo "All critical build tools are installed"
+            wget python-is-python3 repo liblz4-tool libtinfo5 libncurses5 libssl-dev \
+            zlib1g-dev libbz2-dev libsepol-dev libacl1-dev liblzo2-dev gcc-multilib \
+            g++-multilib git gnupg lib32z1-dev lib32ncurses5-dev lib32readline8 \
+            libbz2-1.0:i386 libtinfo5:i386 libncurses5:i386 libssl-dev:i386 \
+            zlib1g-dev:i386 libsepol-dev:i386 libacl1-dev:i386 liblzo2-dev:i386
 
       - name: Initialize repo
         run: |
           mkdir -p ~/android/fox
           cd ~/android/fox
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni -b twrp-15 --depth=1
+          repo init -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }} --depth=1
           
+          # CREATE ROOMSERVICE.XML THE SIMPLEST WAY POSSIBLE
           mkdir -p .repo/local_manifests
-          echo '<manifest>' > .repo/local_manifests/roomservice.xml
-          echo '  <project path="device/teamvee/twrp" name="TeamVee/device_teamvee_twrp" revision="master"></project>' >> .repo/local_manifests/roomservice.xml
-          echo '</manifest>' >> .repo/local_manifests/roomservice.xml
+          echo "<manifest>" > .repo/local_manifests/roomservice.xml
+          echo "  <project path=\"device/teamvee/twrp\" name=\"TeamVee/device_teamvee_twrp\" revision=\"master\" ></project>" >> .repo/local_manifests/roomservice.xml
+          echo "</manifest>" >> .repo/local_manifests/roomservice.xml
           
-          repo sync -c --no-clone-bundle --no-tags --prune --force-sync -j4 device/teamvee/twrp
+          repo sync -c --no-clone-bundle --no-tags --prune --force-sync -j4
 
       - name: Add device tree
         run: |
