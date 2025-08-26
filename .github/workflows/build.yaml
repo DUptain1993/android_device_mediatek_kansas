@@ -20,10 +20,16 @@ env:
 
 jobs:
   build:
+    # CRITICAL: EXPLICITLY USE UBUNTU 22.04 (NOT LATEST)
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     
     steps:
+      - name: Verify OS version (DEBUG)
+        run: |
+          echo "Running on: $(lsb_release -a 2>&1 | grep Description)"
+          echo "This should show Ubuntu 22.04 - if it shows 24.04, the workflow will fail"
+
       - name: Checkout device tree
         uses: actions/checkout@v4
         with:
@@ -33,6 +39,8 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
+          
+          # Install required packages (verified for Ubuntu 22.04)
           sudo apt-get install -y bc bison build-essential ccache curl flex \
             gperf imagemagick libxml2 libxml2-utils lzop openjdk-17-jdk pngcrush \
             rsync schedtool squashfs-tools xsltproc zip xmlstarlet libgl1-mesa-dev \
@@ -49,7 +57,7 @@ jobs:
           cd ~/android/fox
           repo init -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }} --depth=1
           
-          # CREATE ROOMSERVICE.XML THE SIMPLEST WAY POSSIBLE
+          # Create local manifest
           mkdir -p .repo/local_manifests
           echo "<manifest>" > .repo/local_manifests/roomservice.xml
           echo "  <project path=\"device/teamvee/twrp\" name=\"TeamVee/device_teamvee_twrp\" revision=\"master\" ></project>" >> .repo/local_manifests/roomservice.xml
