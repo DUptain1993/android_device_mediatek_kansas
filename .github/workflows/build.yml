@@ -2,9 +2,9 @@ name: OrangeFox Build
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 env:
@@ -13,10 +13,7 @@ env:
   DEVICE: kansas
   MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni
   MANIFEST_BRANCH: twrp-15
-  REPO_URL: https://gitlab.com/OrangeFox/Releases
-  REPO_BRANCH: master
-  FOX_BRANCH: fox_15.0
-  FOX_VERSION: "R15.0"
+  FOX_VERSION: R15.0
   BUILD_DATE: ${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
@@ -34,18 +31,16 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ccache curl flex g++-multilib \
-            gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev \
-            lib32readline-dev lib32z1-dev liblz4-tool libncurses5 \
-            libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop \
-            openjdk-17-jdk pngcrush rsync schedtool squashfs-tools \
-            xsltproc zip zlib1g-dev libtinfo5 python3 python3-dev \
-            python3-venv repo screen udev xmlstarlet libgl1-mesa-dev \
-            libxml-simple-perl libswitch-perl libxml-parser-perl unzip \
-            maven libbz2-dev libbz2-1.0 libghc-bzlib-dev libsepol1-dev \
-            pkg-config libacl1-dev liblzo2-dev gcc g++ zlib1g-dev \
-            liblz4-tool git schedtool git-lfs wget python-is-python3
+          sudo apt-get install -y bc bison build-essential ccache curl flex \
+            g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libsdl1.2-dev \
+            libssl-dev libxml2 libxml2-utils lzop openjdk-17-jdk pngcrush rsync \
+            schedtool squashfs-tools xsltproc zip zlib1g-dev libtinfo5 python3 \
+            python3-dev python3-venv repo screen udev xmlstarlet libgl1-mesa-dev \
+            libxml-simple-perl libswitch-perl libxml-parser-perl unzip maven \
+            libbz2-dev libbz2-1.0 libghc-bzlib-dev libsepol1-dev pkg-config \
+            libacl1-dev liblzo2-dev gcc g++ zlib1g-dev liblz4-tool git schedtool \
+            git-lfs wget python-is-python3
 
       - name: Initialize repo
         run: |
@@ -55,23 +50,21 @@ jobs:
           
           # Create local manifest for OrangeFox
           mkdir -p .repo/local_manifests
-          cat > .repo/local_manifests/roomservice.xml << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <manifest>
-            <project name="OrangeFox-Recovery/device_xiaomi_miuicamera" path="device/xiaomi/miuicamera" remote="github" revision="fox_12.1" ></project>
-            <project name="OrangeFox-Recovery/proprietary_vendor_xiaomi" path="vendor/xiaomi" remote="github" revision="fox_12.1" ></project>
-            <project name="TeamVee/generic_vendor_google" path="vendor/google" remote="github" revision="13" ></project>
-            <project name="TeamVee/device_teamvee_twrp" path="device/teamvee/twrp" remote="github" revision="master" ></project>
-          </manifest>
-          EOF
+          cat > .repo/local_manifests/roomservice.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project name="TeamVee/device_teamvee_twrp" path="device/teamvee/twrp" remote="github" revision="master" ></project>
+</manifest>
+EOF
           
           # Sync repositories
-          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc --all)
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc)
 
       - name: Add device tree
         run: |
           cd ~/android/fox
           # Copy our device tree into the build environment
+          mkdir -p device/motorola
           cp -r $GITHUB_WORKSPACE/device/motorola/kansas device/motorola/
           
           # Verify device tree was copied correctly
@@ -112,62 +105,57 @@ jobs:
       - name: Build recovery
         run: |
           cd ~/android/fox
-          mka recoveryimage -j$(nproc --all)
+          mka recoveryimage -j$(nproc)
           
           # Verify build output
           ls -lh out/target/product/${{ env.DEVICE }}/recovery.img
-          du -h out/target/product/${{ env.DEVICE }}/recovery.img
 
       - name: Package recovery
         run: |
           cd ~/android/fox
           # Create flashable zip
-          mkdir -p ~/recovery_output
-          cp out/target/product/${{ env.DEVICE }}/recovery.img ~/recovery_output/
+          mkdir -p $HOME/recovery_output
+          cp out/target/product/${{ env.DEVICE }}/recovery.img $HOME/recovery_output/
           
           # Create README
-          cat > ~/recovery_output/README.txt << EOF
-          OrangeFox Recovery ${{ env.FOX_VERSION }} for Motorola kansas
-          Build Date: ${{ env.BUILD_DATE }}
-          Device: Motorola moto g 2025
-          Platform: MediaTek mt6835
-          
-          Flashing instructions:
-          fastboot flash recovery recovery.img
-          fastboot reboot recovery
-          EOF
+          cat > $HOME/recovery_output/README.txt << EOF
+OrangeFox Recovery ${{ env.FOX_VERSION }} for Motorola kansas
+Build Date: ${{ env.BUILD_DATE }}
+Device: Motorola moto g 2025
+Platform: MediaTek mt6835
+
+Flashing instructions:
+fastboot flash recovery recovery.img
+fastboot reboot recovery
+EOF
           
           # Create zip file
-          cd ~/recovery_output
+          cd $HOME/recovery_output
           zip -r OrangeFox-${{ env.FOX_VERSION }}-${{ env.DEVICE }}-${{ env.BUILD_DATE }}.zip *
 
       - name: Upload recovery artifact
         uses: actions/upload-artifact@v4.3.1
         with:
           name: OrangeFox-Recovery-${{ env.DEVICE }}-${{ env.BUILD_DATE }}
-          path: ~/recovery_output/OrangeFox-${{ env.FOX_VERSION }}-${{ env.DEVICE }}-${{ env.BUILD_DATE }}.zip
+          path: ${{ github.workspace }}/../recovery_output/
           retention-days: 30
           overwrite: true
 
   notify-failure:
     runs-on: ubuntu-22.04
-    if: failure()
+    if: always() && (steps.build.outputs.result == 'failure' || steps.build.outputs.result == 'cancelled')
     needs: build
     
     steps:
       - name: Create failure notification
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          echo "Creating PR comment for failed build..."
+          gh api \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            /repos/${{ github.repository }}/issues/${{ github.event.number }}/comments \
+            -f body="❌ OrangeFox build failed for ${{ env.DEVICE }}: [View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Only create comment if this is a pull request
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "Creating PR comment for failed build..."
-            gh api \
-              -X POST \
-              -H "Accept: application/vnd.github.v3+json" \
-              /repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
-              -f body="❌ OrangeFox build failed for ${{ env.DEVICE }}: [View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          else
-            echo "Not creating comment for non-PR workflow"
-          fi
         shell: bash
