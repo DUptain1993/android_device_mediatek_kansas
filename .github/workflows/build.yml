@@ -1,173 +1,173 @@
-name: Build and Deploy
+name: OrangeFox Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 env:
-  # Set default environment variables
-  BUILD_VERSION: 1.0.0
-  NODE_VERSION: 18.x
-  BUILD_DIR: build
+  # Android build environment variables
+  BUILD_TYPE: userdebug
+  DEVICE: kansas
+  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni
+  MANIFEST_BRANCH: twrp-15
+  REPO_URL: https://gitlab.com/OrangeFox/Releases
+  REPO_BRANCH: master
+  FOX_BRANCH: fox_15.0
+  FOX_VERSION: "R15.0"
+  BUILD_DATE: ${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      commit-sha: ${{ github.sha }}
-      branch-name: ${{ github.ref_name }}
-      timestamp: ${{ github.run_id }}-${{ github.run_attempt }}
-    
-    steps:
-      - name: Set up environment
-        id: env
-        run: |
-          echo "COMMIT_SHA=${GITHUB_SHA}" >> $GITHUB_ENV
-          echo "TIMESTAMP=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
-          echo "BUILD_ID=${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
-      
-      - name: Output environment info
-        run: |
-          echo "Commit SHA: $COMMIT_SHA"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Build ID: $BUILD_ID"
-          echo "Timestamp: $TIMESTAMP"
-
   build:
-    runs-on: ubuntu-latest
-    needs: setup
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
     
     steps:
-      - name: Checkout repository
+      - name: Checkout device tree
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          path: device/motorola/kansas
       
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build project
+      - name: Set up build environment
         run: |
-          npm run build
-          echo "Build completed successfully"
-          ls -la ${{ env.BUILD_DIR }}
-      
-      - name: Package build artifacts
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses5 \
+            libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop \
+            openjdk-17-jdk pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev libtinfo5 python3 python3-dev \
+            python3-venv repo screen udev xmlstarlet libgl1-mesa-dev \
+            libxml-simple-perl libswitch-perl libxml-parser-perl unzip \
+            maven libbz2-dev libbz2-1.0 libghc-bzlib-dev libsepol1-dev \
+            pkg-config libacl1-dev liblzo2-dev gcc g++ zlib1g-dev \
+            liblz4-tool git schedtool git-lfs wget python-is-python3
+
+      - name: Initialize repo
         run: |
-          tar -czf build.tar.gz -C ${{ env.BUILD_DIR }} .
-          ls -lh build.tar.gz
-      
-      - name: Upload build artifact
+          mkdir -p ~/android/fox
+          cd ~/android/fox
+          repo init -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }} --depth=1
+          
+          # Create local manifest for OrangeFox
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/roomservice.xml << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <project name="OrangeFox-Recovery/device_xiaomi_miuicamera" path="device/xiaomi/miuicamera" remote="github" revision="fox_12.1" ></project>
+            <project name="OrangeFox-Recovery/proprietary_vendor_xiaomi" path="vendor/xiaomi" remote="github" revision="fox_12.1" ></project>
+            <project name="TeamVee/generic_vendor_google" path="vendor/google" remote="github" revision="13" ></project>
+            <project name="TeamVee/device_teamvee_twrp" path="device/teamvee/twrp" remote="github" revision="master" ></project>
+          </manifest>
+          EOF
+          
+          # Sync repositories
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc --all)
+
+      - name: Add device tree
+        run: |
+          cd ~/android/fox
+          # Copy our device tree into the build environment
+          cp -r $GITHUB_WORKSPACE/device/motorola/kansas device/motorola/
+          
+          # Verify device tree was copied correctly
+          ls -la device/motorola/kansas
+
+      - name: Set up build environment variables
+        run: |
+          cd ~/android/fox
+          echo "export ALLOW_MISSING_DEPENDENCIES=true" >> ~/.bashrc
+          echo "export LC_ALL=C" >> ~/.bashrc
+          echo "export USE_CCACHE=1" >> ~/.bashrc
+          echo "export CCACHE_EXEC=$(which ccache)" >> ~/.bashrc
+          echo "export CCACHE_DIR=~/ccache" >> ~/.bashrc
+          source ~/.bashrc
+          ccache -M 50G
+          ccache -o compression=true
+          ccache -z
+
+      - name: Configure build
+        run: |
+          cd ~/android/fox
+          # Set up environment
+          . build/envsetup.sh
+          
+          # Lunch device
+          lunch omni_${{ env.DEVICE }}-${{ env.BUILD_TYPE }}
+          
+          # Set OrangeFox variables
+          export OF_USE_LZ4_COMPRESSION=1
+          export OF_NO_TREBLE_COMPATIBILITY_CHECK=1
+          export OF_KEEP_DM_VERITY=1
+          export OF_KEEP_VBMETA_FLAGS=1
+          export OF_SKIP_FBE_DECRYPTION=1
+          export OF_USE_SYSTEM_FINGERPRINT=1
+          export FOX_VERSION=${{ env.FOX_VERSION }}
+          export FOX_BUILD_DATE=${{ env.BUILD_DATE }}
+
+      - name: Build recovery
+        run: |
+          cd ~/android/fox
+          mka recoveryimage -j$(nproc --all)
+          
+          # Verify build output
+          ls -lh out/target/product/${{ env.DEVICE }}/recovery.img
+          du -h out/target/product/${{ env.DEVICE }}/recovery.img
+
+      - name: Package recovery
+        run: |
+          cd ~/android/fox
+          # Create flashable zip
+          mkdir -p ~/recovery_output
+          cp out/target/product/${{ env.DEVICE }}/recovery.img ~/recovery_output/
+          
+          # Create README
+          cat > ~/recovery_output/README.txt << EOF
+          OrangeFox Recovery ${{ env.FOX_VERSION }} for Motorola kansas
+          Build Date: ${{ env.BUILD_DATE }}
+          Device: Motorola moto g 2025
+          Platform: MediaTek mt6835
+          
+          Flashing instructions:
+          fastboot flash recovery recovery.img
+          fastboot reboot recovery
+          EOF
+          
+          # Create zip file
+          cd ~/recovery_output
+          zip -r OrangeFox-${{ env.FOX_VERSION }}-${{ env.DEVICE }}-${{ env.BUILD_DATE }}.zip *
+
+      - name: Upload recovery artifact
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: build-artifact-${{ needs.setup.outputs.build_id }}
-          path: |
-            ${{ env.BUILD_DIR }}/**
-            build.tar.gz
-          retention-days: 7
-          if-no-files-found: error
+          name: OrangeFox-Recovery-${{ env.DEVICE }}-${{ env.BUILD_DATE }}
+          path: ~/recovery_output/OrangeFox-${{ env.FOX_VERSION }}-${{ env.DEVICE }}-${{ env.BUILD_DATE }}.zip
+          retention-days: 30
           overwrite: true
-
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4.3.1
-        with:
-          name: build-artifact-${{ needs.setup.outputs.build_id }}
-          path: ${{ env.BUILD_DIR }}
-          create: true
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version || '18.x' }}
-      
-      - name: Run tests
-        run: |
-          npm test
-          echo "Tests completed successfully"
-      
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4.3.1
-        with:
-          name: test-results-${{ needs.setup.outputs.build_id }}
-          path: |
-            test-results/**
-            coverage/**
-          retention-days: 14
-          if-no-files-found: warn
-          overwrite: true
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: [build, test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4.3.1
-        with:
-          name: build-artifact-${{ needs.setup.outputs.build_id }}
-          path: ${{ env.BUILD_DIR }}
-      
-      - name: Deploy to production
-        env:
-          PROD_API_KEY: ${{ secrets.PROD_API_KEY }}
-        run: |
-          echo "Deploying version ${{ env.BUILD_VERSION }} to production"
-          # Add your deployment commands here
-          echo "Deployment completed successfully"
-      
-      - name: Notify team
-        if: success()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ Deployment completed successfully: [Build ${{ needs.setup.outputs.build_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-            })
 
   notify-failure:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: failure()
-    needs: [build, test, deploy]
+    needs: build
     
     steps:
       - name: Create failure notification
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '❌ Build failed: [View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-            })
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Only create comment if this is a pull request
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Creating PR comment for failed build..."
+            gh api \
+              -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              /repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              -f body="❌ OrangeFox build failed for ${{ env.DEVICE }}: [View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          else
+            echo "Not creating comment for non-PR workflow"
+          fi
+        shell: bash
