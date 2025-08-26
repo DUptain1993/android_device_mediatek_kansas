@@ -1,40 +1,173 @@
-name: OrangeFox Build
+name: Build and Deploy
 
 on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
+env:
+  # Set default environment variables
+  BUILD_VERSION: 1.0.0
+  NODE_VERSION: 18.x
+  BUILD_DIR: build
+
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      commit-sha: ${{ github.sha }}
+      branch-name: ${{ github.ref_name }}
+      timestamp: ${{ github.run_id }}-${{ github.run_attempt }}
+    
+    steps:
+      - name: Set up environment
+        id: env
+        run: |
+          echo "COMMIT_SHA=${GITHUB_SHA}" >> $GITHUB_ENV
+          echo "TIMESTAMP=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+          echo "BUILD_ID=${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+      
+      - name: Output environment info
+        run: |
+          echo "Commit SHA: $COMMIT_SHA"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Build ID: $BUILD_ID"
+          echo "Timestamp: $TIMESTAMP"
+
   build:
     runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
-    - name: Setup Build Environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 python3-venv
-        
-    - name: Initialize OrangeFox Source
-      run: |
-        mkdir -p ~/of-build && cd ~/of-build
-        repo init -u https://github.com/OrangeFoxRecovery/manifest.git -b OrangeFox-15.0
-        
-    - name: Copy Device Tree
-      run: |
-        cd ~/of-build
-        mkdir -p device/motorola
-        git clone https://github.com/${{ github.repository }} device/motorola/kansas
-        
-    - name: Build Recovery
-      run: |
-        cd ~/of-build
-        . build/envsetup.sh
-        lunch fox_kansas-userdebug
-        mka recoveryimage
-        
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: recovery-image
-        path: ~/of-build/out/target/product/kansas/OrangeFox-*.zip
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build project
+        run: |
+          npm run build
+          echo "Build completed successfully"
+          ls -la ${{ env.BUILD_DIR }}
+      
+      - name: Package build artifacts
+        run: |
+          tar -czf build.tar.gz -C ${{ env.BUILD_DIR }} .
+          ls -lh build.tar.gz
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: build-artifact-${{ needs.setup.outputs.build_id }}
+          path: |
+            ${{ env.BUILD_DIR }}/**
+            build.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4.3.1
+        with:
+          name: build-artifact-${{ needs.setup.outputs.build_id }}
+          path: ${{ env.BUILD_DIR }}
+          create: true
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version || '18.x' }}
+      
+      - name: Run tests
+        run: |
+          npm test
+          echo "Tests completed successfully"
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: test-results-${{ needs.setup.outputs.build_id }}
+          path: |
+            test-results/**
+            coverage/**
+          retention-days: 14
+          if-no-files-found: warn
+          overwrite: true
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4.3.1
+        with:
+          name: build-artifact-${{ needs.setup.outputs.build_id }}
+          path: ${{ env.BUILD_DIR }}
+      
+      - name: Deploy to production
+        env:
+          PROD_API_KEY: ${{ secrets.PROD_API_KEY }}
+        run: |
+          echo "Deploying version ${{ env.BUILD_VERSION }} to production"
+          # Add your deployment commands here
+          echo "Deployment completed successfully"
+      
+      - name: Notify team
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Deployment completed successfully: [Build ${{ needs.setup.outputs.build_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+            })
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: [build, test, deploy]
+    
+    steps:
+      - name: Create failure notification
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Build failed: [View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+            })
