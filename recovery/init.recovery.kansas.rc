@@ -1,0 +1,72 @@
+# init.recovery.kansas.rc
+# Motorola kansas recovery initialization for MediaTek
+
+on early-init
+    # Mount required directories
+    mount tmpfs tmpfs /dev
+    mkdir /dev/block 0755
+    mkdir /dev/block/platform 0755
+    mkdir /dev/block/platform/mtk-msdc.0 0755
+    mkdir /dev/block/by-name 0755
+    
+    # Create symlinks for our specific partitions
+    symlink /dev/block/sdc50 /dev/block/by-name/boot
+    symlink /dev/block/sdc72 /dev/block/by-name/boot_a
+    symlink /dev/block/sdc51 /dev/block/by-name/vendor_boot
+    symlink /dev/block/sdc73 /dev/block/by-name/vendor_boot_a
+    symlink /dev/block/sdc52 /dev/block/by-name/recovery
+    symlink /dev/block/sdc81 /dev/block/by-name/recovery_a
+    symlink /dev/block/sdc84 /dev/block/by-name/userdata
+    symlink /dev/block/sdc18 /dev/block/by-name/metadata
+    symlink /dev/block/sdc40 /dev/block/by-name/cache
+    symlink /dev/block/sdc31 /dev/block/by-name/system
+    symlink /dev/block/sdc33 /dev/block/by-name/vendor
+    symlink /dev/block/sdc35 /dev/block/by-name/mcf_ota
+
+    # Create platform-specific symlinks
+    symlink /dev/block/by-name/boot /dev/block/platform/mtk-msdc.0/by-name/boot
+    symlink /dev/block/by-name/boot_a /dev/block/platform/mtk-msdc.0/by-name/boot_a
+    symlink /dev/block/by-name/recovery /dev/block/platform/mtk-msdc.0/by-name/recovery
+    symlink /dev/block/by-name/recovery_a /dev/block/platform/mtk-msdc.0/by-name/recovery_a
+    symlink /dev/block/by-name/userdata /dev/block/platform/mtk-msdc.0/by-name/userdata
+    symlink /dev/block/by-name/cache /dev/block/platform/mtk-msdc.0/by-name/cache
+    symlink /dev/block/by-name/system /dev/block/platform/mtk-msdc.0/by-name/system
+    symlink /dev/block/by-name/vendor /dev/block/platform/mtk-msdc.0/by-name/vendor
+    symlink /dev/block/by-name/mcf_ota /dev/block/platform/mtk-msdc.0/by-name/mcf_ota
+
+on init
+    # Set up brightness
+    write /sys/class/backlight/panel0-backlight/brightness 120
+    
+    # Set up battery monitoring
+    mkdir /sys/class/power_supply/battery 0755
+    symlink /sys/class/power_supply/bms /sys/class/power_supply/battery
+
+on fs
+    # Mount all partitions
+    wait /dev/block/sdc50 60
+    wait /dev/block/sdc72 60
+    wait /dev/block/sdc52 60
+    wait /dev/block/sdc81 60
+    wait /dev/block/sdc84 60
+    wait /dev/block/sdc40 60
+    wait /dev/block/sdc31 60
+    wait /dev/block/sdc33 60
+    wait /dev/block/sdc35 60
+
+    mount emmc /dev/block/sdc50 /boot
+    mount emmc /dev/block/sdc72 /boot_a
+    mount emmc /dev/block/sdc52 /recovery
+    mount emmc /dev/block/sdc81 /recovery_a
+    mount f2fs /dev/block/sdc84 /data
+    mount ext4 /dev/block/sdc40 /cache
+    mount ext4 /dev/block/sdc31 /system
+    mount ext4 /dev/block/sdc33 /vendor
+    mount ext4 /dev/block/sdc35 /mcf_ota
+
+on late-init
+    # Start recovery services
+    start recovery
+    
+    # Set brightness to default
+    write /sys/class/backlight/panel0-backlight/brightness 180
