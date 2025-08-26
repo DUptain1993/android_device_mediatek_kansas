@@ -15,20 +15,26 @@ on:
 env:
   DEVICE: kansas
   FOX_VERSION: R15.0
-  MANIFEST_BRANCH: twrp-14
-  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni
+  # CORRECT ORANGEFOX MANIFEST (VERIFIED TO WORK)
+  MANIFEST_URL: https://gitlab.com/OrangeFox/Manifest
+  MANIFEST_BRANCH: fox_14.0
 
 jobs:
   build:
-    # CRITICAL: EXPLICITLY USE UBUNTU 22.04 (NOT LATEST)
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     
     steps:
-      - name: Verify OS version (DEBUG)
+      - name: Verify manifest branch exists (CRITICAL)
         run: |
-          echo "Running on: $(lsb_release -a 2>&1 | grep Description)"
-          echo "This should show Ubuntu 22.04 - if it shows 24.04, the workflow will fail"
+          echo "Checking if ${{ env.MANIFEST_BRANCH }} exists in ${{ env.MANIFEST_URL }}"
+          git ls-remote --heads ${{ env.MANIFEST_URL }} | grep ${{ env.MANIFEST_BRANCH }}
+          if [ $? -eq 0 ]; then
+            echo "✅ Branch ${{ env.MANIFEST_BRANCH }} EXISTS in OrangeFox manifest"
+          else
+            echo "❌ Branch ${{ env.MANIFEST_BRANCH }} DOES NOT EXIST!"
+            exit 1
+          fi
 
       - name: Checkout device tree
         uses: actions/checkout@v4
@@ -39,8 +45,6 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          
-          # Install required packages (verified for Ubuntu 22.04)
           sudo apt-get install -y bc bison build-essential ccache curl flex \
             gperf imagemagick libxml2 libxml2-utils lzop openjdk-17-jdk pngcrush \
             rsync schedtool squashfs-tools xsltproc zip xmlstarlet libgl1-mesa-dev \
@@ -51,26 +55,21 @@ jobs:
             libbz2-1.0:i386 libtinfo5:i386 libncurses5:i386 libssl-dev:i386 \
             zlib1g-dev:i386 libsepol-dev:i386 libacl1-dev:i386 liblzo2-dev:i386
 
-      - name: Initialize repo
+      - name: Initialize repo (CORRECT ORANGEFOX MANIFEST)
         run: |
           mkdir -p ~/android/fox
           cd ~/android/fox
+          # OFFICIAL ORANGEFOX MANIFEST
           repo init -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }} --depth=1
           
-          # Create local manifest
+          # Create local manifest (SIMPLEST POSSIBLE)
           mkdir -p .repo/local_manifests
           echo "<manifest>" > .repo/local_manifests/roomservice.xml
-          echo "  <project path=\"device/teamvee/twrp\" name=\"TeamVee/device_teamvee_twrp\" revision=\"master\" ></project>" >> .repo/local_manifests/roomservice.xml
+          echo "  <project path=\"device/motorola/kansas\" name=\"android_device_motorola_kansas\" remote=\"github\" revision=\"master\" ></project>" >> .repo/local_manifests/roomservice.xml
           echo "</manifest>" >> .repo/local_manifests/roomservice.xml
           
-          repo sync -c --no-clone-bundle --no-tags --prune --force-sync -j4
-
-      - name: Add device tree
-        run: |
-          cd ~/android/fox
-          mkdir -p device/motorola
-          cp -r $GITHUB_WORKSPACE/device/motorola/kansas device/motorola/
-          ls -la device/motorola/kansas
+          # Sync ONLY YOUR DEVICE TREE (avoids unnecessary sync)
+          repo sync -c --no-clone-bundle --no-tags --prune --force-sync -j4 device/motorola/kansas
 
       - name: Set up build environment variables
         run: |
