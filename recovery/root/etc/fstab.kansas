@@ -1,5 +1,27 @@
-# Android fstab file
-/devices/platform/bootdevice/by-name/system /system ext4 ro,barrier=1 wait
-/devices/platform/bootdevice/by-name/vendor /vendor ext4 ro,barrier=1 wait
-/devices/platform/bootdevice/by-name/cache /cache ext4 noatime,nosuid,nodev,barrier=1 wait,check,formattable
-/devices/platform/bootdevice/by-name/userdata /data f2fs noatime,nosuid,nodev,errors=continue,inline_xattr,inline_data,quota,usrquota,grpquota wait,check,formattable,forcefdeorfbe
+# fstab for Motorola kansas (moto g 2025) - MediaTek mt6835
+# Verified from your partition summary
+
+# System partitions
+/devices/platform/mtk-msdc.0/by-name/system /system ext4 ro,barrier=1,discard wait,slotselect,avb=vbmeta
+/devices/platform/mtk-msdc.0/by-name/system${ro.boot.slot_suffix} /system ext4 ro,barrier=1,discard wait,slotselect,avb=vbmeta
+/devices/platform/mtk-msdc.0/by-name/vendor /vendor ext4 ro,barrier=1,discard wait,slotselect,avb=vbmeta
+/devices/platform/mtk-msdc.0/by-name/vendor${ro.boot.slot_suffix} /vendor ext4 ro,barrier=1,discard wait,slotselect,avb=vbmeta
+
+# Boot partitions
+/devices/platform/mtk-msdc.0/by-name/boot /boot emmc defaults defaults
+/devices/platform/mtk-msdc.0/by-name/boot${ro.boot.slot_suffix} /boot emmc defaults defaults
+/devices/platform/mtk-msdc.0/by-name/recovery /recovery emmc defaults defaults
+/devices/platform/mtk-msdc.0/by-name/recovery${ro.boot.slot_suffix} /recovery emmc defaults defaults
+
+# OTA storage
+/devices/platform/mtk-msdc.0/by-name/mcf_ota /mnt/vendor/mdota ext4 ro wait noatime
+/devices/platform/mtk-msdc.0/by-name/mcf_ota${ro.boot.slot_suffix} /mnt/vendor/mdota ext4 ro wait noatime
+
+# User data
+/devices/platform/mtk-msdc.0/by-name/userdata /data f2fs noatime,nosuid,nodev,errors=continue,inline_xattr,inline_data,quota,usrquota,grpquota wait,check,formattable,forcefdeorfbe
+
+# Cache
+/devices/platform/mtk-msdc.0/by-name/cache /cache ext4 noatime,nosuid,nodev,barrier=1 wait,check,formattable
+
+# NV config
+/devices/platform/mtk-msdc.0/by-name/nvcfg /mnt/vendor/nvcfg ext4 rw wait
