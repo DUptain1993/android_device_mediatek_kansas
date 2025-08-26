@@ -20,13 +20,13 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
-    
+
     steps:
       - name: Checkout device tree
         uses: actions/checkout@v4
         with:
           path: device/motorola/kansas
-      
+
       - name: Set up build environment
         run: |
           sudo dpkg --add-architecture i386
@@ -47,7 +47,7 @@ jobs:
           mkdir -p ~/android/fox
           cd ~/android/fox
           repo init -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }} --depth=1
-          
+
           # Create local manifest for OrangeFox
           mkdir -p .repo/local_manifests
           cat > .repo/local_manifests/roomservice.xml << 'EOF'
@@ -56,7 +56,7 @@ jobs:
   <project name="TeamVee/device_teamvee_twrp" path="device/teamvee/twrp" remote="github" revision="master" ></project>
 </manifest>
 EOF
-          
+
           # Sync repositories
           repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc)
 
@@ -66,7 +66,7 @@ EOF
           # Copy our device tree into the build environment
           mkdir -p device/motorola
           cp -r $GITHUB_WORKSPACE/device/motorola/kansas device/motorola/
-          
+
           # Verify device tree was copied correctly
           ls -la device/motorola/kansas
 
@@ -88,10 +88,10 @@ EOF
           cd ~/android/fox
           # Set up environment
           . build/envsetup.sh
-          
+
           # Lunch device
           lunch omni_${{ env.DEVICE }}-${{ env.BUILD_TYPE }}
-          
+
           # Set OrangeFox variables
           export OF_USE_LZ4_COMPRESSION=1
           export OF_NO_TREBLE_COMPATIBILITY_CHECK=1
@@ -106,7 +106,7 @@ EOF
         run: |
           cd ~/android/fox
           mka recoveryimage -j$(nproc)
-          
+
           # Verify build output
           ls -lh out/target/product/${{ env.DEVICE }}/recovery.img
 
@@ -116,7 +116,7 @@ EOF
           # Create flashable zip
           mkdir -p $HOME/recovery_output
           cp out/target/product/${{ env.DEVICE }}/recovery.img $HOME/recovery_output/
-          
+
           # Create README
           cat > $HOME/recovery_output/README.txt << EOF
 OrangeFox Recovery ${{ env.FOX_VERSION }} for Motorola kansas
@@ -128,7 +128,7 @@ Flashing instructions:
 fastboot flash recovery recovery.img
 fastboot reboot recovery
 EOF
-          
+
           # Create zip file
           cd $HOME/recovery_output
           zip -r OrangeFox-${{ env.FOX_VERSION }}-${{ env.DEVICE }}-${{ env.BUILD_DATE }}.zip *
@@ -143,9 +143,9 @@ EOF
 
   notify-failure:
     runs-on: ubuntu-22.04
-    if: always() && (steps.build.outputs.result == 'failure' || steps.build.outputs.result == 'cancelled')
+    if: always() && (needs.build.result == 'failure' || needs.build.result == 'cancelled')
     needs: build
-    
+
     steps:
       - name: Create failure notification
         if: ${{ github.event_name == 'pull_request' }}
